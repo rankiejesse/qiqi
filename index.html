@@ -50,7 +50,7 @@ function startKeepalive(){
   if(timer) clearInterval(timer);
   timer=setInterval(async()=>{
     if(char && currentCmd) await send(currentCmd);
-  },1200);
+  },400);
 }
 
 async function send(bytes){
