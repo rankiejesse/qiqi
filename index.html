@@ -13,6 +13,7 @@ button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16
 .ctrl{background:#6c3483;color:#fff}
 .ctrl.active{background:#a04fd4;box-shadow:0 0 12px #a04fd4}
 #status{margin-top:20px;color:#aaa;font-size:14px}
+#wsstatus{color:#aaa;font-size:13px}
 </style>
 </head>
 <body>
@@ -28,6 +29,7 @@ button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16
 <button class="ctrl" onclick="switchTo([0x55,0x03,0x00,0x00,0x03,0x03,0x00],this)">舔 3</button>
 <button id="stop" onclick="stopAll()">⏹ 停止</button>
 <p id="status">未连接</p>
+<p id="wsstatus">WS：未连接</p>
 <script>
 let char;
 const STOP = new Uint8Array([0x55,0x04,0x00,0x00,0x00,0x00,0xAA]);
@@ -42,18 +44,34 @@ async function connect(){
     const srv = await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
     char = await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
     document.getElementById('status').innerText = '✅ 已连接：' + dev.name;
+    connectWS();
   } catch(e) {
     document.getElementById('status').innerText = '❌ ' + e;
   }
 }
 
+function connectWS(){
+  const ws = new WebSocket('ws://39.106.160.68:7001');
+  ws.onopen = () => document.getElementById('wsstatus').innerText = 'WS：✅ 已连接';
+  ws.onclose = () => {
+    document.getElementById('wsstatus').innerText = 'WS：断开，重连中...';
+    setTimeout(connectWS, 3000);
+  };
+  ws.onmessage = async (e) => {
+    const bytes = JSON.parse(e.data);
+    await sendBytes(bytes);
+  };
+}
+
+async function sendBytes(bytes){
+  if(!char) return;
+  try{ await char.writeValue(new Uint8Array(bytes)); }
+  catch(e){ document.getElementById('status').innerText = '发送失败：' + e; }
+}
+
 async function send(bytes){
   if(!char){ alert('请先连接蓝牙'); return; }
-  try{
-    await char.writeValue(new Uint8Array(bytes));
-  } catch(e){
-    document.getElementById('status').innerText = '发送失败：' + e;
-  }
+  await sendBytes(bytes);
 }
 
 async function switchTo(bytes, btn){
