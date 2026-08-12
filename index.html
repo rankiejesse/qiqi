@@ -9,8 +9,9 @@ body{background:#1a1a2e;color:#fff;font-family:sans-serif;display:flex;flex-dire
 h1{color:#e91e8c;margin-bottom:30px}
 button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16px;cursor:pointer;width:200px}
 #connect{background:#e91e8c;color:#fff}
-#stop{background:#333;color:#fff}
+#stop{background:#444;color:#fff}
 .ctrl{background:#6c3483;color:#fff}
+.ctrl.active{background:#a04fd4;box-shadow:0 0 12px #a04fd4}
 #status{margin-top:20px;color:#aaa;font-size:14px}
 </style>
 </head>
@@ -18,15 +19,17 @@ button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16
 <h1>🐦 啾啾雀</h1>
 <button id="connect" onclick="connect()">连接蓝牙</button>
 <br>
-<button class="ctrl" onclick="sendCmd([0x55,0x04,0x00,0x00,0x01,0x50,0xAA])">轻 · 0x50</button>
-<button class="ctrl" onclick="sendCmd([0x55,0x04,0x00,0x00,0x01,0x80,0xAA])">中 · 0x80</button>
-<button class="ctrl" onclick="sendCmd([0x55,0x04,0x00,0x00,0x01,0xB4,0xAA])">强 · 0xB4</button>
-<button class="ctrl" onclick="sendCmd([0x55,0x04,0x00,0x00,0x01,0xFF,0xAA])">最强 · 0xFF</button>
-<button class="ctrl" onclick="sendCmd([0x55,0x03,0x00,0x00,0x01,0x03,0x00])">舔</button>
-<button id="stop" onclick="stop()">⏹ 停止</button>
+<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0x50,0xAA],this)">轻 · 0x50</button>
+<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0x80,0xAA],this)">中 · 0x80</button>
+<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0xB4,0xAA],this)">强 · 0xB4</button>
+<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0xFF,0xAA],this)">最强 · 0xFF</button>
+<button class="ctrl" onclick="setCmd([0x55,0x03,0x00,0x00,0x01,0x03,0x00],this)">舔 1</button>
+<button class="ctrl" onclick="setCmd([0x55,0x03,0x00,0x00,0x02,0x03,0x00],this)">舔 2</button>
+<button class="ctrl" onclick="setCmd([0x55,0x03,0x00,0x00,0x03,0x03,0x00],this)">舔 3</button>
+<button id="stop" onclick="stopAll()">⏹ 停止</button>
 <p id="status">未连接</p>
 <script>
-let char;
+let char, currentCmd=null, timer=null;
 const STOP=[0x55,0x04,0x00,0x00,0x00,0x00,0xAA];
 
 async function connect(){
@@ -39,21 +42,35 @@ async function connect(){
     const srv=await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
     char=await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
     document.getElementById('status').innerText='✅ 已连接：'+dev.name;
+    startKeepalive();
   }catch(e){document.getElementById('status').innerText='❌ '+e;}
 }
 
-async function send(bytes){
-  if(!char){alert('请先连接蓝牙');return;}
-  await char.writeValueWithoutResponse(new Uint8Array(bytes));
+function startKeepalive(){
+  if(timer) clearInterval(timer);
+  timer=setInterval(async()=>{
+    if(char && currentCmd) await send(currentCmd);
+  },1200);
 }
 
-async function sendCmd(bytes){
+async function send(bytes){
+  if(!char) return;
+  try{ await char.writeValueWithoutResponse(new Uint8Array(bytes)); }catch(e){}
+}
+
+async function setCmd(bytes, btn){
+  if(!char){alert('请先连接蓝牙');return;}
+  document.querySelectorAll('.ctrl').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
   await send(STOP);
   await new Promise(r=>setTimeout(r,80));
-  await send(bytes);
+  currentCmd=bytes;
+  await send(currentCmd);
 }
 
-async function stop(){
+async function stopAll(){
+  currentCmd=null;
+  document.querySelectorAll('.ctrl').forEach(b=>b.classList.remove('active'));
   await send(STOP);
 }
 </script>
