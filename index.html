@@ -19,17 +19,17 @@ button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16
 <h1>🐦 啾啾雀</h1>
 <button id="connect" onclick="connect()">连接蓝牙</button>
 <br>
-<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0x50,0xAA],this)">轻 · 0x50</button>
-<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0x80,0xAA],this)">中 · 0x80</button>
-<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0xB4,0xAA],this)">强 · 0xB4</button>
-<button class="ctrl" onclick="setCmd([0x55,0x04,0x00,0x00,0x01,0xFF,0xAA],this)">最强 · 0xFF</button>
-<button class="ctrl" onclick="setCmd([0x55,0x03,0x00,0x00,0x01,0x03,0x00],this)">舔 1</button>
-<button class="ctrl" onclick="setCmd([0x55,0x03,0x00,0x00,0x02,0x03,0x00],this)">舔 2</button>
-<button class="ctrl" onclick="setCmd([0x55,0x03,0x00,0x00,0x03,0x03,0x00],this)">舔 3</button>
+<button class="ctrl" onclick="send([0x55,0x04,0x00,0x00,0x01,0x50,0xAA],this)">轻 · 0x50</button>
+<button class="ctrl" onclick="send([0x55,0x04,0x00,0x00,0x01,0x80,0xAA],this)">中 · 0x80</button>
+<button class="ctrl" onclick="send([0x55,0x04,0x00,0x00,0x01,0xB4,0xAA],this)">强 · 0xB4</button>
+<button class="ctrl" onclick="send([0x55,0x04,0x00,0x00,0x01,0xFF,0xAA],this)">最强 · 0xFF</button>
+<button class="ctrl" onclick="send([0x55,0x03,0x00,0x00,0x01,0x03,0x00],this)">舔 1</button>
+<button class="ctrl" onclick="send([0x55,0x03,0x00,0x00,0x02,0x03,0x00],this)">舔 2</button>
+<button class="ctrl" onclick="send([0x55,0x03,0x00,0x00,0x03,0x03,0x00],this)">舔 3</button>
 <button id="stop" onclick="stopAll()">⏹ 停止</button>
 <p id="status">未连接</p>
 <script>
-let char, currentCmd=null, timer=null;
+let char;
 const STOP=[0x55,0x04,0x00,0x00,0x00,0x00,0xAA];
 
 async function connect(){
@@ -42,34 +42,17 @@ async function connect(){
     const srv=await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
     char=await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
     document.getElementById('status').innerText='✅ 已连接：'+dev.name;
-    startKeepalive();
   }catch(e){document.getElementById('status').innerText='❌ '+e;}
 }
 
-function startKeepalive(){
-  if(timer) clearInterval(timer);
-  timer=setInterval(async()=>{
-    if(char && currentCmd) await send(currentCmd);
-  },400);
-}
-
-async function send(bytes){
-  if(!char) return;
+async function send(bytes, btn){
+  if(!char){alert('请先连接蓝牙');return;}
+  document.querySelectorAll('.ctrl').forEach(b=>b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
   try{ await char.writeValueWithoutResponse(new Uint8Array(bytes)); }catch(e){}
 }
 
-async function setCmd(bytes, btn){
-  if(!char){alert('请先连接蓝牙');return;}
-  document.querySelectorAll('.ctrl').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  await send(STOP);
-  await new Promise(r=>setTimeout(r,80));
-  currentCmd=bytes;
-  await send(currentCmd);
-}
-
 async function stopAll(){
-  currentCmd=null;
   document.querySelectorAll('.ctrl').forEach(b=>b.classList.remove('active'));
   await send(STOP);
 }
