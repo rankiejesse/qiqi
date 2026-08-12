@@ -29,12 +29,65 @@ button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16
 <button class="ctrl" onclick="switchTo([0x55,0x03,0x00,0x00,0x03,0x03,0x00],this)">舔 3</button>
 <button id="stop" onclick="stopAll()">⏹ 停止</button>
 <p id="status">未连接</p>
-<p id="wsstatus">WS：未连接</p>
+<p id="wsstatus">轮询：未开始</p>
 <script>
 let char;
 const STOP = new Uint8Array([0x55,0x04,0x00,0x00,0x00,0x00,0xAA]);
+const RELAY = 'http://39.106.160.68:7001';
 
 async function connect(){
+  try{
+    document.getElementById('status').innerText='连接中...';
+    const dev = await navigator.bluetooth.requestDevice({
+      filters:[{name:'HS141B'}],
+      optionalServices:['0000ffe0-0000-1000-8000-00805f9b34fb']
+    });
+    const srv = await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+    char = await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+    document.getElementById('status').innerText = '✅ 已连接：' + dev.name;
+    startPolling();
+  } catch(e) {
+    document.getElementById('status').innerText = '❌ ' + e;
+  }
+}
+
+function startPolling(){
+  document.getElementById('wsstatus').innerText = '轮询：运行中';
+  setInterval(async () => {
+    try{
+      const r = await fetch(RELAY);
+      const cmd = await r.json();
+      if(cmd) await sendBytes(cmd);
+    } catch(e){}
+  }, 1000);
+}
+
+async function sendBytes(bytes){
+  if(!char) return;
+  try{ await char.writeValue(new Uint8Array(bytes)); }
+  catch(e){ document.getElementById('status').innerText = '发送失败：' + e; }
+}
+
+async function send(bytes){
+  if(!char){ alert('请先连接蓝牙'); return; }
+  await sendBytes(bytes);
+}
+
+async function switchTo(bytes, btn){
+  await send(Array.from(STOP));
+  await new Promise(r => setTimeout(r, 50));
+  await send(bytes);
+  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+}
+
+async function stopAll(){
+  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
+  await send(Array.from(STOP));
+}
+</script>
+</body>
+</html>async function connect(){
   try{
     document.getElementById('status').innerText='连接中...';
     const dev = await navigator.bluetooth.requestDevice({
