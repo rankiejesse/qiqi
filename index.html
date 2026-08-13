@@ -82,17 +82,23 @@ function startPolling(){
  setInterval(async () => {
  try{
  const r = await fetch(RELAY);
- const cmd = await r.json();
+ const txt = await r.text();
+ let cmd;
+ try { cmd = JSON.parse(txt); } catch(e){ cmd = null; }
  if(cmd && Array.isArray(cmd)){
+ showLast(cmd);
  await sendBytes(cmd);
  if(cmd.length >= 6 && cmd[5] === 0x00){
  lastCmd = null;
  } else {
  lastCmd = cmd.slice();
  }
- showLast(cmd);
+ } else {
+ document.getElementById('relaystatus').innerText = '轮询中 无指令 ' + new Date().toLocaleTimeString();
  }
- } catch(e){}
+ } catch(e){
+ document.getElementById('relaystatus').innerText = '轮询错误: ' + e.message;
+ }
  }, 1000);
 }
 
