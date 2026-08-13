@@ -12,190 +12,130 @@ button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16
 #stop{background:#444;color:#fff}
 .ctrl{background:#6c3483;color:#fff}
 .ctrl.active{background:#a04fd4;box-shadow:0 0 12px #a04fd4}
+.suck{background:#8e44ad}
+.vib{background:#2980b9}
 #status{margin-top:20px;color:#aaa;font-size:14px}
 #wsstatus{color:#aaa;font-size:13px}
+#lastcmd{color:#666;font-size:12px;margin-top:6px}
 </style>
 </head>
 <body>
 <h1>🐦 啾啾雀</h1>
 <button id="connect" onclick="connect()">连接蓝牙</button>
 <br>
-<button class="ctrl" onclick="switchTo([0x55,0x04,0x00,0x00,0x01,0x50,0xAA],this)">轻 · 0x50</button>
-<button class="ctrl" onclick="switchTo([0x55,0x04,0x00,0x00,0x01,0x80,0xAA],this)">中 · 0x80</button>
-<button class="ctrl" onclick="switchTo([0x55,0x04,0x00,0x00,0x01,0xB4,0xAA],this)">强 · 0xB4</button>
-<button class="ctrl" onclick="switchTo([0x55,0x04,0x00,0x00,0x01,0xFF,0xAA],this)">最强 · 0xFF</button>
-<button class="ctrl" onclick="switchTo([0x55,0x03,0x00,0x00,0x01,0x03,0x00],this)">舔 1</button>
-<button class="ctrl" onclick="switchTo([0x55,0x03,0x00,0x00,0x02,0x03,0x00],this)">舔 2</button>
-<button class="ctrl" onclick="switchTo([0x55,0x03,0x00,0x00,0x03,0x03,0x00],this)">舔 3</button>
+<button class="ctrl suck" onclick="switchTo(9,1,1,this)">吮吸 1-1</button>
+<button class="ctrl suck" onclick="switchTo(9,1,5,this)">吮吸 1-5</button>
+<button class="ctrl suck" onclick="switchTo(9,1,10,this)">吮吸 1-10</button>
+<button class="ctrl vib" onclick="switchTo(3,1,1,this)">振动 1-1</button>
+<button class="ctrl vib" onclick="switchTo(3,1,5,this)">振动 1-5</button>
+<button class="ctrl vib" onclick="switchTo(3,1,10,this)">振动 1-10</button>
 <button id="stop" onclick="stopAll()">⏹ 停止</button>
 <p id="status">未连接</p>
-<p id="wsstatus">轮询：未开始</p>
+<p id="wsstatus">WS：未连接</p>
+<p id="lastcmd"></p>
+
 <script>
 let char;
-const STOP = new Uint8Array([0x55,0x04,0x00,0x00,0x00,0x00,0xAA]);
-const RELAY = 'https://little-cake-9203.rankiejesse.workers.dev/';
+let lastCmd = null; // 续发保险用，停止后清空
+
+// 新协议 7 字节：55 XX 00 00 模式 强度 00；XX=09吮吸/03振动
+const STOP_SUCK = [0x55,0x09,0x00,0x00,0x00,0x00,0x00]; // 吮吸停止
+const STOP_VIB = [0x55,0x03,0x00,0x00,0x00,0x00,0x00]; // 振动停止
+// WS 地址：走隧道（服务器7001→手机8765）；若页面和8765同机可改 ws://127.0.0.1:8765
+const WS_URL = 'ws://39.106.160.68:7001';
+
+function buildCmd(func, mode, level){
+ // level 0 或缺失 → 对应停止
+ if(!level) return func === 9 ? STOP_SUCK.slice() : STOP_VIB.slice();
+ return [0x55, func, 0x00, 0x00, mode & 0xff, level & 0xff, 0x00];
+}
 
 async function connect(){
-  try{
-    document.getElementById('status').innerText='连接中...';
-    const dev = await navigator.bluetooth.requestDevice({
-      filters:[{name:'HS141B'}],
-      optionalServices:['0000ffe0-0000-1000-8000-00805f9b34fb']
-    });
-    const srv = await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-    char = await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
-    document.getElementById('status').innerText = '✅ 已连接：' + dev.name;
-    startPolling();
-  } catch(e) {
-    document.getElementById('status').innerText = '❌ ' + e;
-  }
-}
-
-function startPolling(){
-  document.getElementById('wsstatus').innerText = '轮询：运行中';
-  setInterval(async () => {
-    try{
-      const r = await fetch(RELAY);
-      const cmd = await r.json();
-      if(cmd){
-        await sendBytes(Array.from(STOP));
-        await new Promise(r => setTimeout(r, 50));
-        await sendBytes(cmd);
-      }
-    } catch(e){}
-  }, 1000);
-}
-
-async function sendBytes(bytes){
-  if(!char) return;
-  try{ await char.writeValue(new Uint8Array(bytes)); }
-  catch(e){ document.getElementById('status').innerText = '发送失败：' + e; }
-}
-
-async function send(bytes){
-  if(!char){ alert('请先连接蓝牙'); return; }
-  await sendBytes(bytes);
-}
-
-async function switchTo(bytes, btn){
-  await send(Array.from(STOP));
-  await new Promise(r => setTimeout(r, 50));
-  await send(bytes);
-  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-}
-
-async function stopAll(){
-  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
-  await send(Array.from(STOP));
-}
-</script>
-</body>
-</html>
-async function connect(){
-  try{
-    document.getElementById('status').innerText='连接中...';
-    const dev = await navigator.bluetooth.requestDevice({
-      filters:[{name:'HS141B'}],
-      optionalServices:['0000ffe0-0000-1000-8000-00805f9b34fb']
-    });
-    const srv = await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-    char = await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
-    document.getElementById('status').innerText = '✅ 已连接：' + dev.name;
-    startPolling();
-  } catch(e) {
-    document.getElementById('status').innerText = '❌ ' + e;
-  }
-}
-
-function startPolling(){
-  document.getElementById('wsstatus').innerText = '轮询：运行中';
-  setInterval(async () => {
-    try{
-      const r = await fetch(RELAY);
-      const cmd = await r.json();
-      if(cmd) await sendBytes(cmd);
-    } catch(e){}
-  }, 1000);
-}
-
-async function sendBytes(bytes){
-  if(!char) return;
-  try{ await char.writeValue(new Uint8Array(bytes)); }
-  catch(e){ document.getElementById('status').innerText = '发送失败：' + e; }
-}
-
-async function send(bytes){
-  if(!char){ alert('请先连接蓝牙'); return; }
-  await sendBytes(bytes);
-}
-
-async function switchTo(bytes, btn){
-  await send(Array.from(STOP));
-  await new Promise(r => setTimeout(r, 50));
-  await send(bytes);
-  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
-}
-
-async function stopAll(){
-  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
-  await send(Array.from(STOP));
-}
-</script>
-</body>
-</html>async function connect(){
-  try{
-    document.getElementById('status').innerText='连接中...';
-    const dev = await navigator.bluetooth.requestDevice({
-      filters:[{name:'HS141B'}],
-      optionalServices:['0000ffe0-0000-1000-8000-00805f9b34fb']
-    });
-    const srv = await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
-    char = await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
-    document.getElementById('status').innerText = '✅ 已连接：' + dev.name;
-    connectWS();
-  } catch(e) {
-    document.getElementById('status').innerText = '❌ ' + e;
-  }
+ try{
+ document.getElementById('status').innerText='连接中...';
+ const dev = await navigator.bluetooth.requestDevice({
+ filters:[{name:'HS141B'}],
+ optionalServices:['0000ffe0-0000-1000-8000-00805f9b34fb']
+ });
+ const srv = await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
+ char = await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
+ document.getElementById('status').innerText = '✅ 已连接：' + dev.name;
+ connectWS();
+ } catch(e) {
+ document.getElementById('status').innerText = '❌ ' + e;
+ }
 }
 
 function connectWS(){
-  const ws = new WebSocket('ws://39.106.160.68:7001');
-  ws.onopen = () => document.getElementById('wsstatus').innerText = 'WS：✅ 已连接';
-  ws.onclose = () => {
-    document.getElementById('wsstatus').innerText = 'WS：断开，重连中...';
-    setTimeout(connectWS, 3000);
-  };
-  ws.onmessage = async (e) => {
-    const bytes = JSON.parse(e.data);
-    await sendBytes(bytes);
-  };
+ const ws = new WebSocket(WS_URL);
+ ws.onopen = () => document.getElementById('wsstatus').innerText = 'WS：✅ 已连接';
+ ws.onclose = () => {
+ document.getElementById('wsstatus').innerText = 'WS：断开，3秒后重连...';
+ setTimeout(connectWS, 3000);
+ };
+ ws.onmessage = async (e) => {
+ try{
+ const msg = JSON.parse(e.data);
+ let bytes = null;
+ if(Array.isArray(msg)){
+ bytes = msg;
+ } else if(msg && typeof msg === 'object'){
+ // 兼容 {func:9/3, mode, level} 或 {func, mode, strength}
+ const func = msg.func;
+ if(func){
+ const mode = msg.mode || 1;
+ const level = msg.level != null ? msg.level : (msg.strength != null ? msg.strength : 0);
+ bytes = buildCmd(func, mode, level);
+ }
+ }
+ if(bytes){
+ await sendBytes(bytes);
+ // 停止类指令清续发，运行类指令记录续发
+ if(bytes.length >= 6 && bytes[5] === 0x00){
+ lastCmd = null;
+ } else {
+ lastCmd = bytes.slice();
+ }
+ document.getElementById('lastcmd').innerText = '最近指令: ' + bytes.map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' ');
+ }
+ }catch(err){}
+ };
 }
 
 async function sendBytes(bytes){
-  if(!char) return;
-  try{ await char.writeValue(new Uint8Array(bytes)); }
-  catch(e){ document.getElementById('status').innerText = '发送失败：' + e; }
+ if(!char) return;
+ try{ await char.writeValue(new Uint8Array(bytes)); }
+ catch(e){ document.getElementById('status').innerText = '发送失败：' + e; }
 }
 
 async function send(bytes){
-  if(!char){ alert('请先连接蓝牙'); return; }
-  await sendBytes(bytes);
+ if(!char){ alert('请先连接蓝牙'); return; }
+ await sendBytes(bytes);
 }
 
-async function switchTo(bytes, btn){
-  await send(Array.from(STOP));
-  await new Promise(r => setTimeout(r, 50));
-  await send(bytes);
-  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
+async function switchTo(func, mode, level, btn){
+ await send(STOP_SUCK); await send(STOP_VIB); // 先全停再切换
+ await new Promise(r => setTimeout(r, 60));
+ const bytes = buildCmd(func, mode, level);
+ await send(bytes);
+ lastCmd = bytes.slice();
+ document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
+ if(btn) btn.classList.add('active');
+ document.getElementById('lastcmd').innerText = '最近指令: ' + bytes.map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' ');
 }
 
 async function stopAll(){
-  document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
-  await send(Array.from(STOP));
+ document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
+ lastCmd = null;
+ await send(STOP_SUCK);
+ await send(STOP_VIB);
+ document.getElementById('lastcmd').innerText = '已停止';
 }
+
+// 续发保险：部分玩具 1.5s 无指令自动停，这里每 1.2s 重发最后一条运行指令
+setInterval(() => {
+ if(lastCmd && char) char.writeValue(new Uint8Array(lastCmd)).catch(()=>{});
+}, 1200);
 </script>
 </body>
 </html>
