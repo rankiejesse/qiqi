@@ -6,49 +6,60 @@
 <title>啾啾雀控制</title>
 <style>
 body{background:#1a1a2e;color:#fff;font-family:sans-serif;display:flex;flex-direction:column;align-items:center;padding:40px 20px}
-h1{color:#e91e8c;margin-bottom:30px}
-button{margin:10px;padding:15px 30px;border:none;border-radius:25px;font-size:16px;cursor:pointer;width:200px}
+h1{color:#e91e8c;margin-bottom:20px}
+button{margin:6px;padding:15px 30px;border:none;border-radius:25px;font-size:16px;cursor:pointer}
 #connect{background:#e91e8c;color:#fff}
 #stop{background:#444;color:#fff}
-.ctrl{background:#6c3483;color:#fff}
-.ctrl.active{background:#a04fd4;box-shadow:0 0 12px #a04fd4}
-.suck{background:#8e44ad}
-.vib{background:#2980b9}
+h2{color:#bbb;font-size:14px;margin:18px 0 6px;width:min(560px,92vw);text-align:left}
+.grid{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;width:min(560px,92vw);margin:0 0 6px}
+.grid button{padding:8px 0;font-size:12px;border:none;border-radius:6px;cursor:pointer;width:100%}
+.suck{background:#8e44ad;color:#fff}
+.suck.active{background:#d2a4f0;color:#1a1a2e;box-shadow:0 0 10px #a04fd4}
+.vib{background:#2980b9;color:#fff}
+.vib.active{background:#a8d8f0;color:#1a1a2e;box-shadow:0 0 10px #5dade2}
 #status{margin-top:20px;color:#aaa;font-size:14px}
-#wsstatus{color:#aaa;font-size:13px}
+#relaystatus{color:#aaa;font-size:13px}
 #lastcmd{color:#666;font-size:12px;margin-top:6px}
 </style>
 </head>
 <body>
 <h1>🐦 啾啾雀</h1>
 <button id="connect" onclick="connect()">连接蓝牙</button>
-<br>
-<button class="ctrl suck" onclick="switchTo(9,1,1,this)">吮吸 1-1</button>
-<button class="ctrl suck" onclick="switchTo(9,1,5,this)">吮吸 1-5</button>
-<button class="ctrl suck" onclick="switchTo(9,1,10,this)">吮吸 1-10</button>
-<button class="ctrl vib" onclick="switchTo(3,1,1,this)">振动 1-1</button>
-<button class="ctrl vib" onclick="switchTo(3,1,5,this)">振动 1-5</button>
-<button class="ctrl vib" onclick="switchTo(3,1,10,this)">振动 1-10</button>
-<button id="stop" onclick="stopAll()">⏹ 停止</button>
+<h2>吮吸（模式1-8 × 强度1-10）</h2>
+<div class="grid" id="suckGrid"></div>
+<h2>振动（模式1-8 × 强度1-10）</h2>
+<div class="grid" id="vibGrid"></div>
+<button id="stop" onclick="stopAll()">⏹ 全部停止</button>
 <p id="status">未连接</p>
-<p id="wsstatus">WS：未连接</p>
+<p id="relaystatus">轮询：未开始</p>
 <p id="lastcmd"></p>
 
 <script>
 let char;
-let lastCmd = null; // 续发保险用，停止后清空
+let lastCmd = null;
 
-// 新协议 7 字节：55 XX 00 00 模式 强度 00；XX=09吮吸/03振动
-const STOP_SUCK = [0x55,0x09,0x00,0x00,0x00,0x00,0x00]; // 吮吸停止
-const STOP_VIB = [0x55,0x03,0x00,0x00,0x00,0x00,0x00]; // 振动停止
-// WS 地址：走隧道（服务器7001→手机8765）；若页面和8765同机可改 ws://127.0.0.1:8765
-const WS_URL = 'ws://39.106.160.68:7001';
+const STOP_SUCK = [0x55,0x09,0x00,0x00,0x00,0x00,0x00];
+const STOP_VIB = [0x55,0x03,0x00,0x00,0x00,0x00,0x00];
+const RELAY = 'https://little-cake-9203.rankiejesse.workers.dev/';
 
 function buildCmd(func, mode, level){
- // level 0 或缺失 → 对应停止
- if(!level) return func === 9 ? STOP_SUCK.slice() : STOP_VIB.slice();
  return [0x55, func, 0x00, 0x00, mode & 0xff, level & 0xff, 0x00];
 }
+
+function buildGrid(id, func){
+ const c = document.getElementById(id);
+ for(let mode = 1; mode <= 8; mode++){
+ for(let level = 1; level <= 10; level++){
+ const b = document.createElement('button');
+ b.className = func === 9 ? 'suck' : 'vib';
+ b.textContent = mode + '-' + level;
+ b.onclick = () => switchTo(func, mode, level, b);
+ c.appendChild(b);
+ }
+ }
+}
+buildGrid('suckGrid', 9);
+buildGrid('vibGrid', 3);
 
 async function connect(){
  try{
@@ -60,46 +71,33 @@ async function connect(){
  const srv = await (await dev.gatt.connect()).getPrimaryService('0000ffe0-0000-1000-8000-00805f9b34fb');
  char = await srv.getCharacteristic('0000ffe1-0000-1000-8000-00805f9b34fb');
  document.getElementById('status').innerText = '✅ 已连接：' + dev.name;
- connectWS();
+ startPolling();
  } catch(e) {
  document.getElementById('status').innerText = '❌ ' + e;
  }
 }
 
-function connectWS(){
- const ws = new WebSocket(WS_URL);
- ws.onopen = () => document.getElementById('wsstatus').innerText = 'WS：✅ 已连接';
- ws.onclose = () => {
- document.getElementById('wsstatus').innerText = 'WS：断开，3秒后重连...';
- setTimeout(connectWS, 3000);
- };
- ws.onmessage = async (e) => {
+function startPolling(){
+ document.getElementById('relaystatus').innerText = '轮询：运行中';
+ setInterval(async () => {
  try{
- const msg = JSON.parse(e.data);
- let bytes = null;
- if(Array.isArray(msg)){
- bytes = msg;
- } else if(msg && typeof msg === 'object'){
- // 兼容 {func:9/3, mode, level} 或 {func, mode, strength}
- const func = msg.func;
- if(func){
- const mode = msg.mode || 1;
- const level = msg.level != null ? msg.level : (msg.strength != null ? msg.strength : 0);
- bytes = buildCmd(func, mode, level);
- }
- }
- if(bytes){
- await sendBytes(bytes);
- // 停止类指令清续发，运行类指令记录续发
- if(bytes.length >= 6 && bytes[5] === 0x00){
+ const r = await fetch(RELAY);
+ const cmd = await r.json();
+ if(cmd && Array.isArray(cmd)){
+ await sendBytes(cmd);
+ if(cmd.length >= 6 && cmd[5] === 0x00){
  lastCmd = null;
  } else {
- lastCmd = bytes.slice();
+ lastCmd = cmd.slice();
  }
+ showLast(cmd);
+ }
+ } catch(e){}
+ }, 1000);
+}
+
+function showLast(bytes){
  document.getElementById('lastcmd').innerText = '最近指令: ' + bytes.map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' ');
- }
- }catch(err){}
- };
 }
 
 async function sendBytes(bytes){
@@ -114,25 +112,22 @@ async function send(bytes){
 }
 
 async function switchTo(func, mode, level, btn){
- await send(STOP_SUCK); await send(STOP_VIB); // 先全停再切换
- await new Promise(r => setTimeout(r, 60));
  const bytes = buildCmd(func, mode, level);
  await send(bytes);
  lastCmd = bytes.slice();
- document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
+ document.querySelectorAll('.suck,.vib').forEach(b => b.classList.remove('active'));
  if(btn) btn.classList.add('active');
- document.getElementById('lastcmd').innerText = '最近指令: ' + bytes.map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' ');
+ showLast(bytes);
 }
 
 async function stopAll(){
- document.querySelectorAll('.ctrl').forEach(b => b.classList.remove('active'));
+ document.querySelectorAll('.suck,.vib').forEach(b => b.classList.remove('active'));
  lastCmd = null;
  await send(STOP_SUCK);
  await send(STOP_VIB);
  document.getElementById('lastcmd').innerText = '已停止';
 }
 
-// 续发保险：部分玩具 1.5s 无指令自动停，这里每 1.2s 重发最后一条运行指令
 setInterval(() => {
  if(lastCmd && char) char.writeValue(new Uint8Array(lastCmd)).catch(()=>{});
 }, 1200);
